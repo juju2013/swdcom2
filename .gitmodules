@@ -1,3 +1,6 @@
 [submodule "stlink"]
 	path = stlink
 	url = https://github.com/Crest/stlink.git
+[submodule "linenoise"]
+	path = linenoise
+	url = https://github.com/antirez/linenoise.git

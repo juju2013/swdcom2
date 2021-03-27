@@ -13,6 +13,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef USE_LINENOISE
+  #include "linenoise/linenoise.h"
+  #include "lineinput.h"
+#endif
+
 // CLOCK_MONOTONIC_FAST is FreeBSD specific.
 // Fall back to CLOCK_MONOTONIC_COARSE if available.
 // If neither is available use CLOCK_MONOTONIC which will likely be implemented as syscall.
@@ -45,6 +50,7 @@ static bool stdin_pipe  = false; // Is stdin a pipe?
 static bool stdin_file  = false; // Is stdin a regular file?
 static int  fd          = STDIN_FILENO;
 static int  line_num    = -1;
+
 
 // On TTYs ctrl+d results in a ASCII end of transmission control character.
 #define ASCII_EOT (0x04)
@@ -309,6 +315,9 @@ produce(uint32_t indicies)
 		count = strlen(helper);
 		end_of_file = false;
 	} else {
+#ifdef USE_LINENOISE
+  count = linput_readline(buffer, sizeof(buffer));
+#else
 		ssize_t result = read(fd, buffer, tx_f);
 		if ( result < 0 ) {
 			if ( errno != EINTR && errno != EAGAIN ) {
@@ -318,6 +327,7 @@ produce(uint32_t indicies)
 			}
 		}
 		count = (uint8_t)result;
+#endif
 	}
 	if ( !count ) {
 		if ( fd != STDIN_FILENO ) {
@@ -438,6 +448,7 @@ elapsed(struct timespec start, struct timespec stop)
 // the host PC and the STLINK/V2 both assume polling.
 // Blocking on stdin would block transmissions from the
 // target to the host PC as well.
+#ifndef USE_LINENOISE
 static void
 stdin_nonblock_or_die(void)
 {
@@ -450,6 +461,7 @@ stdin_nonblock_or_die(void)
 		die("Failed to add O_NONBLOCK to file descriptor status flags: %s.", strerror(errno));
 	}
 }
+#endif
 
 // Retrieve the current clock value
 static struct timespec
@@ -581,8 +593,9 @@ main(int argc, char *argv[])
 	install_signal_handlers();
 	open_or_die(serial);
 	raw_mode_or_die();
+#ifndef USE_LINENOISE
 	stdin_nonblock_or_die();
-
+#endif
 	// Halt the target to read the base address from R11.
 	if ( !addr ) {
 		if ( stlink_force_debug(handle) ) {
@@ -597,6 +610,10 @@ main(int argc, char *argv[])
 		}
 		addr = regs->r[11];
 	}
+
+  #ifdef USE_LINENOISE
+    linput_init();
+  #endif
 
 	struct timespec last_active = get_time();
 	while ( !quit ) {
@@ -636,6 +653,9 @@ main(int argc, char *argv[])
 			if ( diff.tv_sec || diff.tv_nsec > 100000000 ) {
 				usleep(10*1000);
 			}
+      #ifdef USE_LINENOISE
+        linput_save();
+      #endif
 		}
 	}
 
